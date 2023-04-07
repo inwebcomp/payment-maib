@@ -1,0 +1,12 @@
+/node_modules
+/src/resources/public/hot
+/src/resources/public/storage
+/storage/*.key
+/vendor
+/.idea
+/.vagrant
+/.vscode
+Homestead.json
+Homestead.yaml
+npm-debug.log
+.env
