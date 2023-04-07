@@ -61,12 +61,12 @@ class MaibDriver extends Driver implements Revertable, DayShouldBeClosed
     /**
      * @throws \Exception
      */
-    public function createPayment(Payment $payment, $successPath, $cancelPath, $buttonInfo = null): Payment
+    public function createPayment(Payment $payment, $successPath = '', $cancelPath = '', $buttonInfo = null): Payment
     {
         $transactionId = optional($payment->detail)['transaction_id'];
 
         if ($transactionId) {
-            return Payment::where('transaction_id', $transactionId)->firstOrFail();
+            return $payment;
         }
 
         $transactionId = $this->registerTransaction($payment);
@@ -92,7 +92,11 @@ class MaibDriver extends Driver implements Revertable, DayShouldBeClosed
 
     public function isSuccessfulPayment(Payment $payment): bool
     {
-        $transaction = $this->getTransactionInfo($payment);
+        try {
+            $transaction = $this->getTransactionInfo($payment);
+        } catch (\Exception $e) {
+            return false;
+        }
 
         return $transaction['status'] === 'OK';
     }
