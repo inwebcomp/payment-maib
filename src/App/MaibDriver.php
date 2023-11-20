@@ -6,14 +6,16 @@ use GuzzleHttp\Client;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\MessageFormatter;
 use GuzzleHttp\Middleware;
+use InWeb\Payment\Contracts\Driver\HasCheckPaymentStatusJob;
 use InWeb\Payment\Contracts\Driver\Revertable;
 use InWeb\Payment\Contracts\Driver\DayShouldBeClosed;
 use InWeb\Payment\Drivers\Driver;
+use InWeb\Payment\Enums\TransactionState;
 use InWeb\Payment\Models\Payment;
 use JetBrains\PhpStorm\NoReturn;
 use Maib\MaibApi\MaibClient;
 
-class MaibDriver extends Driver implements Revertable, DayShouldBeClosed
+class MaibDriver extends Driver implements Revertable, DayShouldBeClosed, HasCheckPaymentStatusJob
 {
     public mixed $config = [
         'merchant_handler' => '',
@@ -101,6 +103,29 @@ class MaibDriver extends Driver implements Revertable, DayShouldBeClosed
         return $transaction['status'] === 'OK';
     }
 
+    public function getPaymentStatus(Payment $payment): TransactionState
+    {
+        $info = $this->getTransactionInfo($payment);
+
+        if ($info['RESULT_PS'] === 'RETURNED') {
+            return TransactionState::RETURNED;
+        }
+
+        if ($info['RESULT_PS'] === 'CANCELLED') {
+            return TransactionState::CANCELED;
+        }
+
+        if ($info['RESULT_PS'] === 'ACTIVE') {
+            return TransactionState::ACTIVE;
+        }
+
+        if ($info['RESULT_PS'] === 'FINISHED') {
+            return TransactionState::FINISHED;
+        }
+
+        throw new \Exception('Unknown payment state');
+    }
+
     private function registerTransaction(Payment $payment): string
     {
         $transactionId = null;
@@ -142,6 +167,10 @@ class MaibDriver extends Driver implements Revertable, DayShouldBeClosed
             $transactionInfo['lang'],
         );
 
+        if ($transaction['error']) {
+            throw new \Exception($transaction['error']);
+        }
+
         return $transaction['TRANSACTION_ID'];
     }
 
@@ -155,5 +184,29 @@ class MaibDriver extends Driver implements Revertable, DayShouldBeClosed
     public function closeDay(): void
     {
         $this->client->closeDay();
+    }
+
+    public function handleJobCheckPaymentStatus(Payment $payment): void
+    {
+        if ($payment->process_start_at->diffInMinutes() > 10) {
+            $payment->fail();
+
+            return;
+        }
+
+        /** @var \InWeb\Payment\Drivers\Driver $paymentDriver */
+        $paymentDriver = app('payment');
+
+        $status = $paymentDriver->getPaymentStatus($payment);
+
+        if ($status === TransactionState::FINISHED) {
+            $payment->success();
+        } else if ($status === TransactionState::CANCELED) {
+            $payment->fail();
+        } else if ($status === TransactionState::RETURNED) {
+            $payment->fail();
+        } else if ($status === TransactionState::ACTIVE) {
+            // Wait for payment
+        }
     }
 }
