@@ -188,9 +188,9 @@ class MaibDriver extends Driver implements Revertable, DayShouldBeClosed, HasChe
 
     public function handleJobCheckPaymentStatus(Payment $payment): void
     {
-        if ($payment->process_start_at->diffInMinutes() > 10) {
-            $payment->fail();
+        $minutesAlive = $payment->process_start_at->diffInMinutes();
 
+        if ($minutesAlive < 10) {
             return;
         }
 
